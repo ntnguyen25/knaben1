@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Knaben Stremio Addon",
+  "description": "Stremio JSON Addon cào dữ liệu torrent \u0026 magnet link từ Knaben.org, hỗ trợ tìm kiếm phim \u0026 sắp xếp theo số lượng Seeds cao nhất.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
