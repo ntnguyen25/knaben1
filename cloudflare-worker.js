@@ -123,39 +123,63 @@ function getManifest(config) {
 }
 
 // Scrape Knaben HTML mirror
-async function fetchKnabenMirror(mirror, encodedQuery) {
+async function fetchKnabenMirror(mirror, query) {
   try {
-    const res = await fetch(`${mirror}/q/${encodedQuery}`, {
+    const encoded = encodeURIComponent(query.trim());
+    const searchUrl = `${mirror}/search/${encoded}/0/1/seeds`;
+    let res = await fetch(searchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
       signal: AbortSignal.timeout(4500),
     });
+
+    if (!res.ok) {
+      const fallbackUrl = `${mirror}/search/index.php?q=${encoded}`;
+      res = await fetch(fallbackUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(3500),
+      });
+    }
+
     if (!res.ok) return [];
     const html = await res.text();
     if (!html) return [];
 
     const items = [];
-    const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let rowMatch;
+    const rowRegex = /<tr[^>]*data-id="([a-fA-F0-9]{40})"[^>]*>([\s\S]*?)<\/tr>/gi;
+    let match;
 
-    while ((rowMatch = rowRegex.exec(html)) !== null) {
-      const rowContent = rowMatch[1];
+    while ((match = rowRegex.exec(html)) !== null) {
+      const infoHash = match[1].toLowerCase();
+      const rowContent = match[2];
+
       const magnetMatch = rowContent.match(/href="(magnet:\?[^"]+)"/i);
-      if (!magnetMatch) continue;
-
-      const magnetLink = magnetMatch[1].replace(/&amp;/g, '&');
-      const infoHash = extractInfoHash(magnetLink);
-      if (!infoHash) continue;
+      const magnetLink = magnetMatch ? magnetMatch[1].replace(/&amp;/g, '&') : '';
 
       let title = '';
-      const titleLinkMatch = rowContent.match(/<a[^>]*href="[^"]*\/details\/[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
-      if (titleLinkMatch) {
-        title = titleLinkMatch[1].replace(/<[^>]+>/g, '').trim();
+      const titleAttrMatch = rowContent.match(/<a[^>]*title="([^"]+)"/i);
+      if (titleAttrMatch) title = titleAttrMatch[1].trim();
+
+      if (!title) {
+        const titleLinkMatch = rowContent.match(/<a[^>]*href="[^"]*\/details\/[^"]*"[^>]*>([\s\S]*?)<\/a>/i);
+        if (titleLinkMatch) {
+          title = titleLinkMatch[1].replace(/<[^>]+>/g, '').trim();
+        }
       }
 
       if (!title) {
+        const wrapMatch = rowContent.match(/<td[^>]*class="[^"]*text-wrap[^"]*"[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i);
+        if (wrapMatch) {
+          title = wrapMatch[1].replace(/<[^>]+>/g, '').trim();
+        }
+      }
+
+      if (!title && magnetLink) {
         const dnMatch = magnetLink.match(/dn=([^&]+)/);
         if (dnMatch) {
           try {
@@ -167,30 +191,33 @@ async function fetchKnabenMirror(mirror, encodedQuery) {
       }
       if (!title) continue;
 
+      const finalMagnet = magnetLink || `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(title)}&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce`;
+
+      let sizeStr = '';
+      const sizeAttrMatch = rowContent.match(/<td[^>]*title="[^"]*Bytes"[^>]*>([\s\S]*?)<\/td>/i);
+      if (sizeAttrMatch) {
+        sizeStr = sizeAttrMatch[1].replace(/<[^>]+>/g, '').trim();
+      } else {
+        const sizeMatch = rowContent.match(/\b(\d+(?:\.\d+)?\s*(?:GiB|MiB|KiB|TiB|GB|MB|KB|TB))\b/i);
+        if (sizeMatch) sizeStr = sizeMatch[1];
+      }
+
       let seeds = 0;
       let leeches = 0;
-      const seedMatch = rowContent.match(/class="[^"]*(?:seeds|seeders|green|text-success)[^"]*"[^>]*>([\s\S]*?)<\//i);
-      if (seedMatch) {
-        seeds = parseInt(seedMatch[1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim(), 10) || 0;
-      }
-
-      const leechMatch = rowContent.match(/class="[^"]*(?:leeches|leechers|red|text-danger)[^"]*"[^>]*>([\s\S]*?)<\//i);
-      if (leechMatch) {
-        leeches = parseInt(leechMatch[1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim(), 10) || 0;
-      }
-
-      if (seeds === 0) {
-        const textOnly = rowContent.replace(/<[^>]+>/g, ' ');
-        const slMatch = textOnly.match(/(\d+)\s*[\/|]\s*(\d+)/);
-        if (slMatch) {
-          seeds = parseInt(slMatch[1], 10) || 0;
-          leeches = parseInt(slMatch[2], 10) || 0;
+      const colorMatches = [...rowContent.matchAll(/<td[^>]*style="[^"]*color[^"]*"[^>]*>([\s\S]*?)<\/td>/gi)];
+      if (colorMatches.length >= 1) {
+        seeds = parseInt(colorMatches[0][1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim(), 10) || 0;
+        if (colorMatches.length >= 2) {
+          leeches = parseInt(colorMatches[1][1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim(), 10) || 0;
         }
       }
 
-      let sizeStr = '';
-      const sizeMatch = rowContent.match(/\b(\d+(?:\.\d+)?\s*(?:GiB|MiB|KiB|TiB|GB|MB|KB|TB))\b/i);
-      if (sizeMatch) sizeStr = sizeMatch[1];
+      if (seeds === 0) {
+        const seedMatch = rowContent.match(/class="[^"]*(?:seeds|seeders|green|text-success)[^"]*"[^>]*>([\s\S]*?)<\//i);
+        if (seedMatch) seeds = parseInt(seedMatch[1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim(), 10) || 0;
+        const leechMatch = rowContent.match(/class="[^"]*(?:leeches|leechers|red|text-danger)[^"]*"[^>]*>([\s\S]*?)<\//i);
+        if (leechMatch) leeches = parseInt(leechMatch[1].replace(/<[^>]+>/g, '').replace(/,/g, '').trim(), 10) || 0;
+      }
 
       const quality = detectQualityTags(title);
 
@@ -198,7 +225,7 @@ async function fetchKnabenMirror(mirror, encodedQuery) {
         id: `knaben-${infoHash}`,
         title,
         infoHash,
-        magnet: magnetLink,
+        magnet: finalMagnet,
         seeds,
         leeches,
         size: sizeStr || 'N/A',
@@ -224,7 +251,7 @@ async function fetchKnabenMirror(mirror, encodedQuery) {
 async function fetchApibay(query) {
   try {
     const res = await fetch(`https://apibay.org/q.php?q=${encodeURIComponent(query)}`, {
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(3500),
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -271,7 +298,7 @@ async function fetchApibay(query) {
 async function fetchSolidTorrents(query) {
   try {
     const res = await fetch(`https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(query)}&category=all`, {
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(2500),
     });
     if (!res.ok) return [];
     const json = await res.json();
@@ -314,7 +341,94 @@ async function fetchSolidTorrents(query) {
   }
 }
 
-async function scrapeKnaben(query, config = {}) {
+// Check if title matches TV series episode
+function matchesEpisode(title, season, episode) {
+  if (season === undefined || episode === undefined || season === null || episode === null) return true;
+  const t = title.toUpperCase();
+
+  const exactPatterns = [
+    new RegExp(`S0*${season}[.\\s-]*E0*${episode}\\b`, 'i'),
+    new RegExp(`\\b${season}X0*${episode}\\b`, 'i'),
+  ];
+
+  if (exactPatterns.some((p) => p.test(t))) {
+    return true;
+  }
+
+  const isSeasonPack = new RegExp(`\\bS0*${season}\\b`, 'i').test(t) || new RegExp(`SEASON\\s*0*${season}\\b`, 'i').test(t);
+  const mentionsOtherEpisode = new RegExp(`E(?!(0*${episode}\\b))\\d+`, 'i').test(t);
+
+  if (isSeasonPack && !mentionsOtherEpisode) {
+    return true;
+  }
+
+  return false;
+}
+
+// Resolves Stremio IMDb IDs into titles via Cinemeta
+async function resolveStremioMedia(type, id) {
+  const decodedId = decodeURIComponent(id).trim();
+
+  if (!decodedId.startsWith('tt')) {
+    return {
+      primaryQuery: decodedId.replace(/^(knaben:|kna:)/i, ''),
+    };
+  }
+
+  const parts = decodedId.split(':');
+  const imdbId = parts[0];
+  const season = parts[1] ? parseInt(parts[1], 10) : undefined;
+  const episode = parts[2] ? parseInt(parts[2], 10) : undefined;
+  const cinemetaType = (type === 'series' || season !== undefined) ? 'series' : 'movie';
+
+  try {
+    const res = await fetch(`https://v3-cinemeta.strem.io/meta/${cinemetaType}/${imdbId}.json`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(3500),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const meta = data?.meta;
+      if (meta?.name) {
+        const cleanName = meta.name.replace(/[:'’]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (season !== undefined && episode !== undefined) {
+          const s = String(season).padStart(2, '0');
+          const e = String(episode).padStart(2, '0');
+          return {
+            primaryQuery: `${cleanName} S${s}E${e}`,
+            fallbackQuery: `${cleanName} S${s}`,
+            season,
+            episode,
+            imdbId,
+            name: meta.name,
+            year: meta.year,
+          };
+        }
+
+        const year = meta.year ? String(meta.year).slice(0, 4) : '';
+        return {
+          primaryQuery: year ? `${cleanName} ${year}` : cleanName,
+          fallbackQuery: cleanName,
+          imdbId,
+          name: meta.name,
+          year: meta.year,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[Cinemeta resolve warning]', err.message);
+  }
+
+  return {
+    primaryQuery: imdbId,
+    imdbId,
+    season,
+    episode,
+  };
+}
+
+async function scrapeKnaben(query, config = {}, mediaMeta = null) {
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
@@ -323,17 +437,24 @@ async function scrapeKnaben(query, config = {}) {
   const qualityFilter = config.qualityFilter || 'all';
   const sortBy = config.sortBy || 'seeds';
 
-  const encodedQuery = encodeURIComponent(cleanQuery);
   const items = [];
 
-  const mirrors = [
-    fetchKnabenMirror('https://knaben.org', encodedQuery),
-    fetchKnabenMirror('https://knaben.eu', encodedQuery),
+  const searchTasks = [
+    fetchKnabenMirror('https://knaben.org', cleanQuery),
     fetchApibay(cleanQuery),
-    fetchSolidTorrents(cleanQuery),
   ];
 
-  const settled = await Promise.allSettled(mirrors);
+  if (mediaMeta?.fallbackQuery && mediaMeta.fallbackQuery !== cleanQuery) {
+    searchTasks.push(fetchKnabenMirror('https://knaben.org', mediaMeta.fallbackQuery));
+  }
+
+  if (mediaMeta?.imdbId && mediaMeta.imdbId !== cleanQuery) {
+    searchTasks.push(fetchApibay(mediaMeta.imdbId));
+  }
+
+  searchTasks.push(fetchSolidTorrents(cleanQuery));
+
+  const settled = await Promise.allSettled(searchTasks);
   for (const res of settled) {
     if (res.status === 'fulfilled' && Array.isArray(res.value)) {
       items.push(...res.value);
@@ -349,6 +470,10 @@ async function scrapeKnaben(query, config = {}) {
   }
 
   let finalItems = Array.from(uniqueMap.values());
+
+  if (mediaMeta?.season !== undefined && mediaMeta?.episode !== undefined) {
+    finalItems = finalItems.filter((i) => matchesEpisode(i.title, mediaMeta.season, mediaMeta.episode));
+  }
 
   if (minSeeds > 0) {
     finalItems = finalItems.filter((i) => i.seeds >= minSeeds);
@@ -376,17 +501,28 @@ async function scrapeKnaben(query, config = {}) {
 function formatStremioStreams(items) {
   return items.map((item) => {
     const seedBadge = item.seeds > 0 ? `🟢 ${item.seeds} seeds` : `⚪ 0 seeds`;
-    const leechBadge = `🔴 ${item.leeches} leeches`;
+    const leechBadge = item.leeches > 0 ? `🔴 ${item.leeches} leeches` : ``;
     const qualityTag = item.quality || (item.is4k ? '4K' : item.is1080p ? '1080p' : item.is720p ? '720p' : 'HD');
 
     const nameLine = `[${qualityTag}] Knaben ⚡\n👥 ${item.seeds} seeds`;
-    const titleLine = `${item.title}\n💾 ${item.size} | ${seedBadge} | ${leechBadge}\n⚡ Knaben Magnet Stream (Cloudflare)`;
+    const titleLine = `${item.title}\n💾 ${item.size} | ${seedBadge} ${leechBadge ? '| ' + leechBadge : ''}\n⚡ Knaben Magnet Stream (Cloudflare)`;
 
     return {
       name: nameLine,
       title: titleLine,
-      infoHash: item.infoHash,
-      url: item.magnet,
+      infoHash: item.infoHash.toLowerCase(),
+      externalUrl: item.magnet,
+      sources: [
+        'tracker:udp://tracker.opentrackr.org:1337/announce',
+        'tracker:udp://open.demonii.com:1337/announce',
+        'tracker:udp://open.stealth.si:80/announce',
+        'tracker:udp://tracker.torrent.eu.org:451/announce',
+        'tracker:udp://vito-tracker.space:6969/announce',
+        'tracker:udp://vito-tracker.duckdns.org:6969/announce',
+        'tracker:udp://tracker.theoks.net:6969/announce',
+        'tracker:udp://tracker.srv00.com:6969/announce',
+        `dht:${item.infoHash.toLowerCase()}`,
+      ],
       behaviorHints: {
         bingeGroup: `knaben-${qualityTag.toLowerCase()}`,
         notFast: false,
@@ -530,18 +666,14 @@ export default {
       const config = parseConfig(configStr, url.searchParams);
 
       try {
-        let searchQuery = '';
-        if (id.startsWith('knaben:') || id.startsWith('kna:')) {
-          searchQuery = decodeURIComponent(id.replace(/^(knaben:|kna:)/, ''));
-        } else {
-          searchQuery = decodeURIComponent(id);
-        }
+        const mediaMeta = await resolveStremioMedia(type, id);
+        const searchQuery = mediaMeta.primaryQuery;
 
-        if (!searchQuery.trim()) {
+        if (!searchQuery || !searchQuery.trim()) {
           return jsonResponse({ streams: [] });
         }
 
-        const torrents = await scrapeKnaben(searchQuery, config);
+        const torrents = await scrapeKnaben(searchQuery, config, mediaMeta);
         const streams = formatStremioStreams(torrents);
 
         return jsonResponse({ streams });
@@ -559,10 +691,13 @@ export default {
 
       const config = parseConfig(undefined, url.searchParams);
       try {
-        const items = await scrapeKnaben(q, config);
+        const mediaMeta = await resolveStremioMedia('other', q);
+        const searchQuery = mediaMeta.primaryQuery || q;
+        const items = await scrapeKnaben(searchQuery, config, mediaMeta);
         return jsonResponse({
           success: true,
           query: q,
+          resolvedQuery: searchQuery,
           count: items.length,
           config,
           items,

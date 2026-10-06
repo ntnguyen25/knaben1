@@ -1,4 +1,10 @@
-import { scrapeKnaben, formatStremioStreams, ScraperConfig, TorrentItem } from './services/knabenService';
+import {
+  scrapeKnaben,
+  formatStremioStreams,
+  resolveStremioMedia,
+  ScraperConfig,
+  TorrentItem
+} from './services/knabenService';
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -217,18 +223,14 @@ export default {
       const config = parseConfig(configStr, url.searchParams);
 
       try {
-        let searchQuery = '';
-        if (id.startsWith('knaben:') || id.startsWith('kna:')) {
-          searchQuery = decodeURIComponent(id.replace(/^(knaben:|kna:)/, ''));
-        } else {
-          searchQuery = decodeURIComponent(id);
-        }
+        const mediaMeta = await resolveStremioMedia(type, id);
+        const searchQuery = mediaMeta.primaryQuery;
 
-        if (!searchQuery.trim()) {
+        if (!searchQuery || !searchQuery.trim()) {
           return jsonResponse({ streams: [] });
         }
 
-        const torrents = await scrapeKnaben(searchQuery, config);
+        const torrents = await scrapeKnaben(searchQuery, config, mediaMeta);
         const streams = formatStremioStreams(torrents);
 
         return jsonResponse({ streams });
@@ -246,10 +248,13 @@ export default {
 
       const config = parseConfig(undefined, url.searchParams);
       try {
-        const items = await scrapeKnaben(q, config);
+        const mediaMeta = await resolveStremioMedia('other', q);
+        const searchQuery = mediaMeta.primaryQuery || q;
+        const items = await scrapeKnaben(searchQuery, config, mediaMeta);
         return jsonResponse({
           success: true,
           query: q,
+          resolvedQuery: searchQuery,
           count: items.length,
           config,
           items,

@@ -7,6 +7,7 @@ import JSZip from 'jszip';
 import {
   scrapeKnaben,
   formatStremioStreams,
+  resolveStremioMedia,
   TorrentItem,
   ScraperConfig
 } from './src/services/knabenService.js';
@@ -126,24 +127,19 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 });
 
 async function handleStreamRequest(req: express.Request, res: express.Response, configStr?: string) {
-  const { id } = req.params;
+  const { type, id } = req.params;
   const config = parseConfig(configStr, req.query);
 
   try {
-    let searchQuery = '';
+    const mediaMeta = await resolveStremioMedia(type, id);
+    const searchQuery = mediaMeta.primaryQuery;
 
-    if (id.startsWith('knaben:') || id.startsWith('kna:')) {
-      searchQuery = decodeURIComponent(id.replace(/^(knaben:|kna:)/, ''));
-    } else {
-      searchQuery = decodeURIComponent(id);
-    }
-
-    if (!searchQuery.trim()) {
+    if (!searchQuery || !searchQuery.trim()) {
       return res.json({ streams: [] });
     }
 
     // Scrape Knaben directly for magnet links
-    const torrents = await scrapeKnaben(searchQuery, config);
+    const torrents = await scrapeKnaben(searchQuery, config, mediaMeta);
     const streams = formatStremioStreams(torrents);
 
     return res.json({ streams });
@@ -163,11 +159,14 @@ app.get('/api/knaben/search', async (req, res) => {
   const config = parseConfig(undefined, req.query);
 
   try {
-    const items = await scrapeKnaben(q, config);
+    const mediaMeta = await resolveStremioMedia('other', q);
+    const searchQuery = mediaMeta.primaryQuery || q;
+    const items = await scrapeKnaben(searchQuery, config, mediaMeta);
 
     return res.json({
       success: true,
       query: q,
+      resolvedQuery: searchQuery,
       count: items.length,
       config,
       items

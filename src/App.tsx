@@ -92,13 +92,13 @@ export default function App() {
   // Quick preset keywords for 1-click scraping
   const presets = [
     'Inception 2010',
-    'Oppenheimer 2023',
+    'tt1375666',
     'Dune Part Two 2024',
+    'tt0903747:1:1',
+    'Breaking Bad S01E01',
+    'Oppenheimer 2023',
     'Interstellar',
-    'Game of Thrones S01E01',
-    'Breaking Bad 1080p',
-    'House of the Dragon',
-    'Ubuntu 24.04'
+    'House of the Dragon'
   ];
 
   // Active base host
@@ -953,11 +953,11 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-bold text-white">Triển khai lên Cloudflare Workers (Khuyên dùng cho Stremio)</h2>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                      ⚡ 24/7 Online • Miễn phí 100,000 req/ngày
+                      ⚡ 24/7 Online • Hỗ trợ Cinemeta IMDb & Series
                     </span>
                   </div>
                   <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-                    Chạy Addon trên mạng lưới phân tán toàn cầu của Cloudflare, độ trễ cực thấp, không cần mở máy tính hay duy trì máy chủ.
+                    Chạy Addon trên Cloudflare Workers toàn cầu. Tự động chuyển đổi IMDb ID (tt...) từ Stremio sang tên phim & mùa/tập, cào magnet từ Knaben.org và sắp xếp theo số lượng seeds cao nhất.
                   </p>
                 </div>
               </div>
