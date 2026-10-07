@@ -180,14 +180,34 @@ export function detectQualityTags(title: string) {
   return { is4k, is1080p, is720p, isHdr, isRemux, mainQuality };
 }
 
+function base32ToHex(base32: string): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (let i = 0; i < base32.length; i++) {
+    const val = alphabet.indexOf(base32[i].toUpperCase());
+    if (val === -1) return '';
+    bits += val.toString(2).padStart(5, '0');
+  }
+  let hex = '';
+  for (let i = 0; i + 4 <= bits.length; i += 4) {
+    hex += parseInt(bits.substring(i, i + 4), 2).toString(16);
+  }
+  return hex.toLowerCase();
+}
+
 /**
- * Extracts InfoHash from magnet link
+ * Extracts InfoHash from magnet link (supports both 40-char hex and 32-char base32)
  */
 export function extractInfoHash(magnet: string): string {
   if (!magnet) return '';
-  const match = magnet.match(/urn:btih:([a-fA-F0-9]{40})/i) || magnet.match(/urn:btih:([a-zA-Z2-7]{32})/i);
-  if (match && match[1]) {
-    return match[1].toLowerCase();
+  const match40 = magnet.match(/urn:btih:([a-fA-F0-9]{40})/i);
+  if (match40 && match40[1]) {
+    return match40[1].toLowerCase();
+  }
+  const match32 = magnet.match(/urn:btih:([a-zA-Z2-7]{32})/i);
+  if (match32 && match32[1]) {
+    const converted = base32ToHex(match32[1]);
+    if (converted && converted.length === 40) return converted;
   }
   return '';
 }
@@ -563,4 +583,32 @@ export function formatStremioStreams(items: TorrentItem[]): StremioStream[] {
     };
   });
 }
+
+/**
+ * Fetches popular trending movies and series for the Stremio Knaben Catalog
+ */
+export async function fetchCatalogMetas(type: string, id: string, searchQuery?: string): Promise<any[]> {
+  const cinemetaType = type === 'series' ? 'series' : 'movie';
+  let targetUrl = `https://v3-cinemeta.strem.io/catalog/${cinemetaType}/top`;
+  if (searchQuery) {
+    targetUrl += `/search=${encodeURIComponent(searchQuery)}.json`;
+  } else {
+    targetUrl += '.json';
+  }
+
+  try {
+    const res = await fetch(targetUrl, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(4000)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.metas || [];
+    }
+  } catch (err) {
+    console.warn('[Catalog error]', (err as Error).message);
+  }
+  return [];
+}
+
 

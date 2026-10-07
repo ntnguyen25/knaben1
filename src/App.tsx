@@ -85,6 +85,7 @@ export default function App() {
   // Server mode: 'cloudflare' | 'cloud' | 'local_pc' | 'lan'
   const [serverMode, setServerMode] = useState<'cloudflare' | 'cloud' | 'local_pc' | 'lan'>('cloudflare');
   const [cfWorkerUrl, setCfWorkerUrl] = useState<string>('https://knaben-stremio.my-subdomain.workers.dev');
+  const [cfWorkerStatus, setCfWorkerStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
   const [lanIp, setLanIp] = useState<string>('192.168.1.100');
   const [pcPort, setPcPort] = useState<number>(3000);
   const [cfDeployTab, setCfDeployTab] = useState<'dashboard' | 'cli'>('dashboard');
@@ -157,6 +158,25 @@ export default function App() {
       setLocalPcStatus(res.ok ? 'online' : 'offline');
     } catch {
       setLocalPcStatus('offline');
+    }
+  };
+
+  // Test Cloudflare Worker connection
+  const checkCfWorkerConnection = async () => {
+    const clean = cfWorkerUrl.trim().replace(/\/+$/, '');
+    if (!clean || clean.includes('my-subdomain.workers.dev')) {
+      setCfWorkerStatus('offline');
+      return;
+    }
+    setCfWorkerStatus('checking');
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${clean}/manifest.json`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      setCfWorkerStatus(res.ok ? 'online' : 'offline');
+    } catch {
+      setCfWorkerStatus('offline');
     }
   };
 
@@ -1044,33 +1064,69 @@ export default function App() {
               )}
 
               {/* Cloudflare Worker Domain Configurator */}
-              <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                <label className="text-xs font-semibold text-slate-300 shrink-0">
-                  Domain Cloudflare Worker của bạn:
-                </label>
-                <div className="flex-1 w-full flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={cfWorkerUrl}
-                    onChange={(e) => {
-                      setCfWorkerUrl(e.target.value);
-                      if (serverMode !== 'cloudflare') setServerMode('cloudflare');
-                    }}
-                    placeholder="https://knaben-stremio.ten-ban.workers.dev"
-                    className="flex-1 bg-slate-950 border border-slate-700 text-slate-100 text-xs rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-orange-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setServerMode('cloudflare')}
-                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                      serverMode === 'cloudflare'
-                        ? 'bg-orange-500 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {serverMode === 'cloudflare' ? 'Đang chọn' : 'Sử dụng link này'}
-                  </button>
+              <div className="pt-3 border-t border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Domain Cloudflare Worker của bạn:
+                    </label>
+                    {cfWorkerStatus === 'online' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        🟢 Online (200 OK)
+                      </span>
+                    )}
+                    {cfWorkerStatus === 'offline' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                        🔴 Chưa kết nối được
+                      </span>
+                    )}
+                    {cfWorkerStatus === 'checking' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 animate-pulse">
+                        🟡 Đang kiểm tra...
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 w-full flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={cfWorkerUrl}
+                      onChange={(e) => {
+                        setCfWorkerUrl(e.target.value);
+                        setCfWorkerStatus('idle');
+                        if (serverMode !== 'cloudflare') setServerMode('cloudflare');
+                      }}
+                      placeholder="https://knaben-stremio.ten-ban.workers.dev"
+                      className="flex-1 bg-slate-950 border border-slate-700 text-slate-100 text-xs rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-orange-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={checkCfWorkerConnection}
+                      className="px-3 py-2 rounded-lg text-xs font-bold transition-all bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 shrink-0 cursor-pointer"
+                    >
+                      Test kết nối
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setServerMode('cloudflare')}
+                      className={`px-3 py-2 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                        serverMode === 'cloudflare'
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {serverMode === 'cloudflare' ? 'Đang chọn' : 'Sử dụng link này'}
+                    </button>
+                  </div>
                 </div>
+
+                {cfWorkerUrl.includes('my-subdomain.workers.dev') && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <div>
+                      <strong>Lưu ý quan trọng:</strong> Link hiện tại đang chứa domain mẫu <code className="font-mono text-amber-200">my-subdomain.workers.dev</code> (chưa tồn tại). Sau khi bạn deploy Worker trên Cloudflare, hãy dán domain thật vào ô trên để Stremio kết nối được. Hoặc chọn chế độ <strong>Cloud AIS</strong> bên dưới để dùng ngay máy chủ hiện tại!
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1094,7 +1150,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setServerMode('cloudflare')}
-                  className={`py-2 px-2 text-center rounded-lg text-xs font-semibold border transition-all ${
+                  className={`py-2 px-2 text-center rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                     serverMode === 'cloudflare'
                       ? 'bg-orange-500/20 border-orange-500 text-orange-300 shadow-sm'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'
@@ -1105,18 +1161,18 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setServerMode('cloud')}
-                  className={`py-2 px-2 text-center rounded-lg text-xs font-semibold border transition-all ${
+                  className={`py-2 px-2 text-center rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                     serverMode === 'cloud'
                       ? 'bg-purple-600/20 border-purple-500 text-purple-300 shadow-sm'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'
                   }`}
                 >
-                  Cloud AIS
+                  Cloud AIS (Có sẵn)
                 </button>
                 <button
                   type="button"
                   onClick={() => setServerMode('local_pc')}
-                  className={`py-2 px-2 text-center rounded-lg text-xs font-semibold border transition-all ${
+                  className={`py-2 px-2 text-center rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                     serverMode === 'local_pc'
                       ? 'bg-cyan-600/20 border-cyan-500 text-cyan-300 shadow-sm'
                       : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800'
@@ -1164,6 +1220,19 @@ export default function App() {
                   <ExternalLink className="w-4 h-4" />
                   <span>Mở trên Stremio Web</span>
                 </a>
+              </div>
+
+              {/* Troubleshooting helper */}
+              <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl space-y-1.5 text-[11px] text-slate-400">
+                <div className="font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Cách khắc phục khi Addon không hiện trong Stremio:</span>
+                </div>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li><strong>Cách cài thủ công chắc chắn thành công 100%:</strong> Bấm nút <em>Copy</em> ở ô Manifest trên &rarr; Mở Stremio &rarr; Vào tab <strong>Addons (Tiện ích)</strong> &rarr; Dán link vào thanh tìm kiếm &rarr; Bấm <strong>Install</strong>.</li>
+                  <li>Nếu dùng Cloudflare Worker, đảm bảo đã thay <code className="text-orange-300 font-mono">my-subdomain</code> bằng tên miền Worker thật của bạn.</li>
+                  <li>Addon chỉ cung cấp nguồn phát (Stream), bạn chỉ cần mở một bộ phim bất kỳ (như Inception, Dune, Breaking Bad) là các nguồn <strong>[Knaben ⚡]</strong> sẽ tự động hiện lên!</li>
+                </ul>
               </div>
             </div>
 
