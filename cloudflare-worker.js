@@ -159,39 +159,6 @@ function getManifest(config, origin, configStr) {
     logo: 'https://knaben.org/favicon.ico',
   };
 }
-      {
-        key: 'minSeeds',
-        type: 'select',
-        title: 'Số Seeds tối thiểu',
-        default: '0',
-        options: ['0', '5', '10', '20', '50']
-      },
-      {
-        key: 'qualityFilter',
-        type: 'select',
-        title: 'Bộ lọc chất lượng (Quality)',
-        default: 'all',
-        options: ['all', '4k', '1080p', '720p']
-      },
-      {
-        key: 'sortBy',
-        type: 'select',
-        title: 'Sắp xếp kết quả (Sort)',
-        default: 'seeds',
-        options: ['seeds', 'size', 'title']
-      },
-      {
-        key: 'maxResults',
-        type: 'select',
-        title: 'Số lượng kết quả tối đa',
-        default: '50',
-        options: ['20', '50', '100']
-      }
-    ],
-    background: 'https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?q=80&w=1920',
-    logo: 'https://knaben.org/favicon.ico',
-  };
-}
 
 // Fetch catalog items from Cinemeta
 async function handleCatalogRequest(type, id, searchQuery) {
@@ -898,7 +865,11 @@ export default {
       }
       const initialConfig = parseConfig(configStr, url.searchParams);
       return new Response(getLandingHtml(origin, initialConfig), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8', ...CORS_HEADERS },
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Content-Security-Policy': 'frame-ancestors *',
+          ...CORS_HEADERS
+        },
       });
     }
 
@@ -916,14 +887,14 @@ export default {
     // 3. Manifest endpoints (/manifest.json or /:config/manifest.json)
     if (pathname === '/manifest.json') {
       const config = parseConfig(undefined, url.searchParams);
-      return jsonResponse(getManifest(config));
+      return jsonResponse(getManifest(config, origin));
     }
 
     const manifestMatch = pathname.match(/^\/([^/]+)\/manifest\.json$/);
     if (manifestMatch) {
       const configStr = manifestMatch[1];
       const config = parseConfig(configStr, url.searchParams);
-      return jsonResponse(getManifest(config));
+      return jsonResponse(getManifest(config, origin, configStr));
     }
 
     // 4. Catalog endpoints (catch-all for Stremio catalog probes)

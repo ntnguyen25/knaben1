@@ -60,7 +60,7 @@ function parseConfig(configStr?: string, searchParams?: URLSearchParams): Scrape
   return config;
 }
 
-function getManifest(config?: ScraperConfig) {
+function getManifest(config?: ScraperConfig, origin?: string, configStr?: string) {
   let name = 'Knaben Torrent Streams';
   if (config && config.minSeeds && config.minSeeds > 0) {
     name += ` (${config.minSeeds}+ seeds)`;
@@ -68,6 +68,8 @@ function getManifest(config?: ScraperConfig) {
   if (config && config.qualityFilter && config.qualityFilter !== 'all') {
     name += ` [${config.qualityFilter.toUpperCase()}]`;
   }
+
+  const configurationURL = origin ? (configStr ? `${origin}/${configStr}/configure` : `${origin}/configure`) : undefined;
 
   return {
     id: 'community.knaben.torrents',
@@ -80,7 +82,8 @@ function getManifest(config?: ScraperConfig) {
     catalogs: [],
     behaviorHints: {
       configurable: true,
-      configurationRequired: false
+      configurationRequired: false,
+      ...(configurationURL ? { configurationURL } : {})
     },
     config: [
       {
@@ -413,14 +416,14 @@ export default {
     // 3. Manifest endpoints (/manifest.json or /:config/manifest.json)
     if (pathname === '/manifest.json') {
       const config = parseConfig(undefined, url.searchParams);
-      return jsonResponse(getManifest(config));
+      return jsonResponse(getManifest(config, origin));
     }
 
     const manifestMatch = pathname.match(/^\/([^/]+)\/manifest\.json$/);
     if (manifestMatch) {
       const configStr = manifestMatch[1];
       const config = parseConfig(configStr, url.searchParams);
-      return jsonResponse(getManifest(config));
+      return jsonResponse(getManifest(config, origin, configStr));
     }
 
     // 4. Catalog endpoints (catch-all for Stremio catalog probes)

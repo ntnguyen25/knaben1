@@ -83,7 +83,7 @@ export default function App() {
   const [localPcStatus, setLocalPcStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
 
   // Server mode: 'cloudflare' | 'cloud' | 'local_pc' | 'lan'
-  const [serverMode, setServerMode] = useState<'cloudflare' | 'cloud' | 'local_pc' | 'lan'>('cloudflare');
+  const [serverMode, setServerMode] = useState<'cloudflare' | 'cloud' | 'local_pc' | 'lan'>('cloud');
   const [cfWorkerUrl, setCfWorkerUrl] = useState<string>('https://knaben-stremio.my-subdomain.workers.dev');
   const [cfWorkerStatus, setCfWorkerStatus] = useState<'idle' | 'checking' | 'online' | 'offline'>('idle');
   const [lanIp, setLanIp] = useState<string>('192.168.1.100');
@@ -126,6 +126,17 @@ export default function App() {
 
     const paramString = params.toString();
     return paramString ? `${activeBaseUrl}/${paramString}/manifest.json` : `${activeBaseUrl}/manifest.json`;
+  }, [activeBaseUrl, minSeeds, qualityFilter, sortBy, maxResults]);
+
+  const configureUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (minSeeds > 0) params.set('minSeeds', minSeeds.toString());
+    if (qualityFilter !== 'all') params.set('qualityFilter', qualityFilter);
+    if (sortBy !== 'seeds') params.set('sortBy', sortBy);
+    if (maxResults !== 50) params.set('maxResults', maxResults.toString());
+
+    const paramString = params.toString();
+    return paramString ? `${activeBaseUrl}/${paramString}/configure` : `${activeBaseUrl}/configure`;
   }, [activeBaseUrl, minSeeds, qualityFilter, sortBy, maxResults]);
 
   const stremioDeepLink = useMemo(() => manifestUrl.replace(/^https?:\/\//, 'stremio://'), [manifestUrl]);
@@ -1219,6 +1230,15 @@ export default function App() {
                 >
                   <ExternalLink className="w-4 h-4" />
                   <span>Mở trên Stremio Web</span>
+                </a>
+                <a
+                  href={configureUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>⚙️ Mở Trang Cấu Hình Addon (/configure)</span>
                 </a>
               </div>
 
